@@ -25,8 +25,8 @@
 CMAKE_MINIMUM_REQUIRED(VERSION 3.0)
 
 SET(PROJECT_NAME afb-client)
-SET(PROJECT_DESCRIPTION "Standard Client of Application Framework Binder")
-set(PROJECT_VERSION 1.2)
+SET(PROJECT_DESCRIPTION "Basic Client of Application Framework Binder")
+set(PROJECT_VERSION 4.0.0alpha)
 set(PROJECT_URL "https://github.com/redpesk/afb-client")
 SET(PROJECT_LANGUAGE C)
 
@@ -52,10 +52,10 @@ add_compile_options(-fPIC)
 set(CMAKE_C_FLAGS_PROFILING    "-g -O2 -pg -U_FORTIFY_SOURCE")
 set(CMAKE_C_FLAGS_DEBUG        "-g -O2 -ggdb -U_FORTIFY_SOURCE")
 set(CMAKE_C_FLAGS_RELEASE      "-g -O3")
-set(CMAKE_C_FLAGS_CCOV         "-g -O2 --coverage")
+set(CMAKE_C_FLAGS_COVERAGE     "-g -O2 --coverage")
 
 ###########################################################################
 
-pkg_check_modules(modules REQUIRED json-c libsystemd>=222 libafbwsc>=${PROJECT_VERSION})
+pkg_check_modules(modules REQUIRED json-c libsystemd>=222 libafbwsc>=4.0)
 
 add_subdirectory(src)

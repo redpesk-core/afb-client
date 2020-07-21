@@ -330,7 +330,7 @@ static void on_wsj1_call(void *closure, const char *api, const char *verb, struc
 {
 	int rc;
 	if (raw)
-		printf("%s\n", afb_wsj1_msg_object_s(msg));
+		printf("%s\n", afb_wsj1_msg_object_s(msg, 0));
 	if (human)
 		printf("ON-CALL %s/%s:\n%s\n", api, verb,
 				json_object_to_json_string_ext(afb_wsj1_msg_object_j(msg),
@@ -345,7 +345,7 @@ static void on_wsj1_call(void *closure, const char *api, const char *verb, struc
 static void on_wsj1_event(void *closure, const char *event, struct afb_wsj1_msg *msg)
 {
 	if (raw)
-		printf("%s\n", afb_wsj1_msg_object_s(msg));
+		printf("%s\n", afb_wsj1_msg_object_s(msg, 0));
 	if (human)
 		printf("ON-EVENT %s:\n%s\n", event,
 				json_object_to_json_string_ext(afb_wsj1_msg_object_j(msg),
@@ -359,7 +359,7 @@ static void on_wsj1_reply(void *closure, struct afb_wsj1_msg *msg)
 	int iserror = !afb_wsj1_msg_is_reply_ok(msg);
 	exitcode = iserror ? Exit_Error : Exit_Success;
 	if (raw)
-		printf("%s\n", afb_wsj1_msg_object_s(msg));
+		printf("%s\n", afb_wsj1_msg_object_s(msg, 0));
 	if (human)
 		printf("ON-REPLY %s: %s\n%s\n", (char*)closure,
 				iserror ? "ERROR" : "OK",
