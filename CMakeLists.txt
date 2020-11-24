@@ -56,6 +56,6 @@ set(CMAKE_C_FLAGS_COVERAGE     "-g -O2 --coverage")
 
 ###########################################################################
 
-pkg_check_modules(modules REQUIRED json-c libsystemd>=222 libafbwsc>=4.0)
+pkg_check_modules(modules REQUIRED json-c libsystemd>=222 libafbcli>=4.0)
 
 add_subdirectory(src)

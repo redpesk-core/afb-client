@@ -40,11 +40,9 @@
 #define JSON_C_TO_STRING_NOSLASHESCAPE 0
 #endif
 
-#include <libafb/libafb-config.h>
-
-#include <libafb/wsj1/afb-wsj1.h>
-#include <afb/afb-ws-client.h>
-#include <libafb/wsapi/afb-proto-ws.h>
+#include <libafbcli/afb-wsj1.h>
+#include <libafbcli/afb-ws-client.h>
+#include <libafbcli/afb-proto-ws.h>
 
 enum {
 	Exit_Success      = 0,
