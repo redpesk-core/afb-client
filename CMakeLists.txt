@@ -27,7 +27,7 @@ CMAKE_MINIMUM_REQUIRED(VERSION 3.0)
 SET(PROJECT_NAME afb-client)
 SET(PROJECT_DESCRIPTION "Basic Client of Application Framework Binder")
 set(PROJECT_VERSION 4.0.0alpha)
-set(PROJECT_URL "https://github.com/redpesk/afb-client")
+set(PROJECT_URL "https://github.com/redpesk-core/afb-client")
 SET(PROJECT_LANGUAGE C)
 
 INCLUDE(FindPkgConfig)

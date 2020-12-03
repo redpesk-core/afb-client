@@ -301,7 +301,8 @@ static void idle()
 		else if (!synchro || callcount < synchro) {
 			if (!process_stdin() && usein)
 				sd_event_run(loop, 100000);
-		} else {
+		}
+		else {
 			sd_event_run(loop, 30000000);
 		}
 	}

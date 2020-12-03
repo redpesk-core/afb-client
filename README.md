@@ -3,7 +3,7 @@
 This project provides simple client of the Application Framework Binder
 of micro-service architecture.
 
-This project is available at <https://github.com/redpesk/afb-client>
+This project is available at <https://github.com/redpesk-core/afb-client>
 
 ## License and copying
 
@@ -15,7 +15,7 @@ This software if available in dual licensing. See file LICENSE.txt for detail.
 
 It requires the following libraries:
 
-* libafb (<https://github.com/redpesk/afb-libafb>)
+* libafb (<https://github.com/redpesk-core/afb-libafb>)
 * json-c
 * systemd >= 222
 
