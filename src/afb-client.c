@@ -45,14 +45,20 @@
 #include <libafbcli/afb-proto-ws.h>
 
 enum {
-	Exit_Success      = 0,
-	Exit_Error        = 1,
-	Exit_HangUp       = 2,
-	Exit_Input_Fail   = 3,
-	Exit_Bad_Arg      = 4,
-	Exit_Cant_Connect = 5
+	Exit_Success       = 0,
+	Exit_Error         = 1,
+	Exit_HangUp        = 2,
+	Exit_Input_Fail    = 3,
+	Exit_Bad_Arg       = 4,
+	Exit_Cant_Connect  = 5,
+	Exit_Line_Overflow = 6,
+	Exit_Out_Of_Memory = 7
 };
 
+struct pending {
+	char *line;
+	struct pending *next;
+};
 
 /* declaration of functions */
 static void on_wsj1_hangup(void *closure, struct afb_wsj1 *wsj1);
@@ -68,8 +74,8 @@ static void on_pws_event_unsubscribe(void *closure, void *request, uint16_t even
 static void on_pws_event_push(void *closure, uint16_t event_id, struct json_object *data);
 static void on_pws_event_broadcast(void *closure, const char *event_name, struct json_object *data, const afb_proto_ws_uuid_t uuid, uint8_t hop);
 
-static void idle();
-static int process_stdin();
+static void emit_line(char *line);
+static void process_line(char *line);
 static int on_stdin(sd_event_source *src, int fd, uint32_t revents, void *closure);
 
 static void wsj1_emit(const char *api, const char *verb, const char *object);
@@ -97,13 +103,13 @@ static struct afb_proto_ws_client_itf pws_itf = {
 static struct afb_wsj1 *wsj1;
 static struct afb_proto_ws *pws;
 static int breakcon;
-static int exonrep;
 static int callcount;
 static int human;
 static int raw;
 static int keeprun;
 static int direct;
 static int echo;
+static int ontty;
 static int synchro;
 static int usein;
 static sd_event *loop;
@@ -114,6 +120,8 @@ static uint16_t numuuid;
 static uint16_t numtoken;
 static char *url;
 static int exitcode = 0;
+static struct pending *pendings_head = 0;
+static struct pending *pendings_tail = 0;
 
 /* print usage of the program */
 static void usage(int status, char *arg0)
@@ -136,7 +144,7 @@ static void usage(int status, char *arg0)
 		"  -t, --token TOKEN   The token to use\n"
 		"  -u, --uuid UUID     The identifier of session to use\n"
 		"Example:\n"
-		" %s --human 'localhost:1234/api?token=HELLO&uuid=magic' hello ping\n"
+		" %s --human 'localhost:1234/api' hello ping\n"
 		"\n", name
 	);
 
@@ -272,13 +280,13 @@ int main(int ac, char **av, char **env)
 	if (ac == 2) {
 		/* get requests from stdin */
 		usein = 1;
+		ontty = isatty(0);
 		fcntl(0, F_SETFL, O_NONBLOCK);
 		if (sd_event_add_io(loop, &evsrc, 0, EPOLLIN, on_stdin, NULL) < 0)
 			evsrc = NULL;
 	} else {
 		/* the request is defined by the arguments */
 		usein = 0;
-		exonrep = !keeprun;
 		if (direct)
 			pws_call(av[2], av[3]);
 		else
@@ -286,34 +294,64 @@ int main(int ac, char **av, char **env)
 	}
 
 	/* loop until end */
-	idle();
-	return 0;
+	while (usein || keeprun || callcount) {
+		sd_event_run(loop, 30000000);
+	}
+	return exitcode;
 }
 
-static void idle()
+/* ensure allocation pointer succes */
+static void ensure_allocation(void *p)
 {
-	for(;;) {
-		if (!usein) {
-			if (!keeprun && !callcount)
-				exit(exitcode);
-			sd_event_run(loop, 30000000);
-		}
-		else if (!synchro || callcount < synchro) {
-			if (!process_stdin() && usein)
-				sd_event_run(loop, 100000);
-		}
-		else {
-			sd_event_run(loop, 30000000);
-		}
+	if (!p) {
+		fprintf(stderr, "out of memory\n");
+		exit(Exit_Out_Of_Memory);
 	}
+}
+
+/* add a pending line */
+static void pendings_add(char *line)
+{
+	struct pending *pending = malloc(sizeof *pending);
+	ensure_allocation(pending);
+	pending->line = line;
+	pending->next = 0;
+	*(!pendings_head ? &pendings_head : &pendings_tail->next) = pending;
+	pendings_tail = pending;
+}
+
+/* get a pending line */
+static char *pendings_get()
+{
+	struct pending *pending = pendings_head;
+	char *result = pending->line;
+	pendings_head = pending->next;
+	free(pending);
+	return result;
 }
 
 /* decrement the count of calls */
 static void dec_callcount()
 {
+	char *line;
+
 	callcount--;
-	if (exonrep && !callcount)
-		exit(exitcode);
+	while (synchro && callcount < synchro && pendings_head) {
+		line = pendings_get();
+		emit_line(line);
+		free(line);
+	}
+
+	if (synchro && callcount < synchro && evsrc)
+		sd_event_source_set_io_events(evsrc, EPOLLIN);
+}
+
+/* increment the count of calls */
+static void inc_callcount()
+{
+	callcount++;
+	if (synchro && callcount >= synchro && evsrc)
+		sd_event_source_set_io_events(evsrc, 0);
 }
 
 /* called when wsj1 hangsup */
@@ -384,7 +422,7 @@ static void wsj1_call(const char *api, const char *verb, const char *object)
 		printf("SEND-CALL %s/%s %s\n", api, verb, object?:"null");
 
 	/* send the request */
-	callcount++;
+	inc_callcount();
 	rc = afb_wsj1_call_s(wsj1, api, verb, object, on_wsj1_reply, key);
 	if (rc < 0) {
 		fprintf(stderr, "calling %s/%s(%s) failed: %m\n", api, verb, object);
@@ -416,21 +454,68 @@ static void wsj1_emit(const char *api, const char *verb, const char *object)
 		wsj1_event(verb, object);
 	else
 		wsj1_call(api, verb, object);
+}
+
+static char sep[] = " \t";
+
+/* emit call for the line */
+static void emit_line(char *line)
+{
+	char *f1, *f2, *rem;
+
+	/* normalise the buffer content */
+	/* TODO: handle backspace \x7f ? */
+	/* process the lines */
+	f1 = &line[strspn(line, sep)];
+	f2 = &f1[strcspn(f1, sep)];
+	if (*f2)
+		*f2++ = 0;
+	f2 = &f2[strspn(f2, sep)];
+	rem = &f2[strcspn(f2, sep)];
+	if (*rem)
+		*rem++ = 0;
+	rem = &rem[strspn(rem, sep)];
+
+	if (direct)
+		pws_call(f1, rem);
+	else if (f2[0])
+		wsj1_emit(f1, f2, rem);
+	else
+		fprintf(stderr, "verb missing, bad line: %s\n", line);
+
 	if (breakcon)
 		exit(0);
 }
 
 /* process stdin */
-static int process_stdin()
+static void process_line(char *line)
 {
+	char *head;
+
+	if (!line) {
+		usein = 0;
+		return;
+	}
+	head = &line[strspn(line, sep)];
+	if (*head && *head != '#') {
+		if (synchro && callcount >= synchro) {
+			pendings_add(line);
+			return;
+		}
+		emit_line(line);
+	}
+	free(line);
+}
+
+/* process stdin */
+static void process_stdin()
+{
+	static size_t pos = 0;
 	static size_t count = 0;
 	static char line[16384];
-	static char sep[] = " \t";
-	static char sepnl[] = " \t\n";
 
-	int result = 0;
 	ssize_t rc = 0;
-	size_t pos;
+	char *l;
 
 	/* read the buffer */
 	while (sizeof line > count) {
@@ -439,69 +524,35 @@ static int process_stdin()
 			break;
 	}
 	if (rc < 0) {
-		if (errno == EAGAIN)
-			return 0;
-		fprintf(stderr, "read error: %m\n");
-		exit(Exit_Input_Fail);
-	}
-	if (rc == 0) {
-		usein = count != 0;
-		if (!usein && !keeprun) {
-			if (!callcount)
-				exit(exitcode);
-			exonrep = 1;
+		if (errno != EAGAIN) {
+			fprintf(stderr, "read error: %m\n");
+			exit(Exit_Input_Fail);
 		}
 	}
-	count += (size_t)rc;
-	if (synchro && callcount >= synchro)
-		return 0;
-
-	/* normalise the buffer content */
-	/* TODO: handle backspace \x7f ? */
-	/* process the lines */
-	pos = 0;
-	for(;;) {
-		size_t i, api[2], verb[2], rest[2];
-		i = pos;
-		while(i < count && strchr(sep, line[i])) i++;
-		api[0] = i; while(i < count && !strchr(sepnl, line[i])) i++; api[1] = i;
-		while(i < count && strchr(sep, line[i])) i++;
-		if (direct) {
-			verb[0] = api[0];
-			verb[1] = api[1];
-		} else {
-			verb[0] = i; while(i < count && !strchr(sepnl, line[i])) i++; verb[1] = i;
-			while(i < count && strchr(sep, line[i])) i++;
+	else {
+		count += (size_t)rc;
+	}
+	while (pos < count) {
+		if (line[pos] != '\n') {
+			pos++;
+			if (pos >= sizeof line) {
+				fprintf(stderr, "line overflow\n");
+				exit(Exit_Line_Overflow);
+			}
 		}
-		rest[0] = i; while(i < count && line[i] != '\n') i++; rest[1] = i;
-		if (i == count) break;
-		line[i++] = 0;
-		pos = i;
-		if (api[0] == api[1]) {
-			/* empty line */
-		} else if (line[api[0]] == '#') {
-			/* comment */
-		} else if (verb[0] == verb[1]) {
-			fprintf(stderr, "verb missing, bad line: %s\n", line+pos);
-		} else {
-			line[api[1]] = line[verb[1]] = 0;
-			if (direct)
-				pws_call(line + verb[0], line + rest[0]);
-			else
-				wsj1_emit(line + api[0], line + verb[0], line + rest[0]);
-			result = 1;
-			break;
+		else {
+			l = strndup(line, pos);
+			ensure_allocation(l);
+			if (++pos < count)
+				memmove(line, line + pos, count - pos);
+			count -= pos;
+			pos = 0;
+			process_line(l);
 		}
 	}
-	count -= pos;
-	if (count == sizeof line) {
-		fprintf(stderr, "overflow\n");
-		exit(Exit_Input_Fail);
+	if (rc == 0 && count == 0) {
+		process_line(0);
 	}
-	if (count)
-		memmove(line, line + pos, count);
-
-	return result;
 }
 
 /* called when something happens on stdin */
@@ -600,7 +651,7 @@ static void pws_call(const char *verb, const char *object)
 		printf("SEND-CALL: %s %s\n", verb, object?:"null");
 
 	/* send the request */
-	callcount++;
+	inc_callcount();
 	if (object == NULL || object[0] == 0)
 		o = NULL;
 	else {
@@ -614,8 +665,6 @@ static void pws_call(const char *verb, const char *object)
 		fprintf(stderr, "calling %s(%s) failed: %m\n", verb, object?:"");
 		dec_callcount();
 	}
-	if (breakcon)
-		exit(0);
 }
 
 /* called when pws hangsup */
