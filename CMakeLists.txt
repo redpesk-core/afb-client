@@ -57,5 +57,9 @@ set(CMAKE_C_FLAGS_COVERAGE     "-g -O2 --coverage")
 ###########################################################################
 
 pkg_check_modules(modules REQUIRED json-c libsystemd>=222 libafbcli>=4.0)
+pkg_check_modules(readline readline)
+if(readline_FOUND)
+	add_compile_options(-DWITH_READLINE=1)
+endif(readline_FOUND)
 
 add_subdirectory(src)

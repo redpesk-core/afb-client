@@ -34,6 +34,11 @@
 #include <sys/types.h>
 #include <errno.h>
 
+#if WITH_READLINE
+#include <readline/readline.h>
+#include <readline/history.h>
+#endif
+
 #include <systemd/sd-event.h>
 #include <json-c/json.h>
 #if !defined(JSON_C_TO_STRING_NOSLASHESCAPE)
@@ -284,6 +289,10 @@ int main(int ac, char **av, char **env)
 		fcntl(0, F_SETFL, O_NONBLOCK);
 		if (sd_event_add_io(loop, &evsrc, 0, EPOLLIN, on_stdin, NULL) < 0)
 			evsrc = NULL;
+#if WITH_READLINE
+		else if (ontty)
+			rl_callback_handler_install(0, process_line);
+#endif
 	} else {
 		/* the request is defined by the arguments */
 		usein = 0;
@@ -496,6 +505,12 @@ static void process_line(char *line)
 		usein = 0;
 		return;
 	}
+
+#if WITH_READLINE
+	if (*line)
+		add_history(line);
+#endif
+
 	head = &line[strspn(line, sep)];
 	if (*head && *head != '#') {
 		if (synchro && callcount >= synchro) {
@@ -558,8 +573,16 @@ static void process_stdin()
 /* called when something happens on stdin */
 static int on_stdin(sd_event_source *src, int fd, uint32_t revents, void *closure)
 {
-	process_stdin();
+#if WITH_READLINE
+	if (ontty)
+		rl_callback_read_char();
+	else
+#endif
+		process_stdin();
 	if (!usein) {
+#if WITH_READLINE
+		rl_callback_handler_remove();
+#endif
 		sd_event_source_unref(src);
 		evsrc = NULL;
 	}

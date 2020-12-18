@@ -24,9 +24,9 @@
 
 add_executable(afb-client afb-client.c)
 
-include_directories(${modules_INCLUDE_DIRS})
+include_directories(${modules_INCLUDE_DIRS} ${readline_INCLUDE_DIRS})
 
-target_link_libraries(afb-client ${modules_LDFLAGS})
+target_link_libraries(afb-client ${modules_LDFLAGS} ${readline_LDFLAGS})
 
 install(TARGETS afb-client
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
