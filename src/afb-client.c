@@ -290,8 +290,10 @@ int main(int ac, char **av, char **env)
 		if (sd_event_add_io(loop, &evsrc, 0, EPOLLIN, on_stdin, NULL) < 0)
 			evsrc = NULL;
 #if WITH_READLINE
-		else if (ontty)
+		else if (ontty) {
 			rl_callback_handler_install(0, process_line);
+			atexit(rl_deprep_terminal);
+		}
 #endif
 	} else {
 		/* the request is defined by the arguments */
