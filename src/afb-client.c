@@ -33,6 +33,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <errno.h>
+#include <stdarg.h>
 
 #if WITH_READLINE
 #include <readline/readline.h>
@@ -57,12 +58,21 @@ enum {
 	Exit_Bad_Arg       = 4,
 	Exit_Cant_Connect  = 5,
 	Exit_Line_Overflow = 6,
-	Exit_Out_Of_Memory = 7
+	Exit_Out_Of_Memory = 7,
+	Exit_Fatal_Internal= 8
 };
 
 struct pending {
 	char *line;
 	struct pending *next;
+};
+
+struct buffer {
+	char *value;
+	size_t length;
+	size_t offset;
+	struct buffer *next;
+	int file;
 };
 
 /* declaration of functions */
@@ -82,6 +92,10 @@ static void on_pws_event_broadcast(void *closure, const char *event_name, struct
 static void emit_line(char *line);
 static void process_line(char *line);
 static int on_stdin(sd_event_source *src, int fd, uint32_t revents, void *closure);
+
+static int onout(sd_event_source *src, int fd, uint32_t revents, void *closure);
+static int print(const char *fmt, ...);
+static int error(const char *fmt, ...);
 
 static void wsj1_emit(const char *api, const char *verb, const char *object);
 static void pws_call(const char *verb, const char *object);
@@ -127,15 +141,18 @@ static char *url;
 static int exitcode = 0;
 static struct pending *pendings_head = 0;
 static struct pending *pendings_tail = 0;
+static struct buffer *buffers_head = 0;
+static struct buffer *buffers_tail = 0;
 
 /* print usage of the program */
 static void usage(int status, char *arg0)
 {
+	int (*prt)(const char *fmt, ...) = status ? error : print;
 	char *name = strrchr(arg0, '/');
 	name = name ? name + 1 : arg0;
-	fprintf(status ? stderr : stdout, "usage: %s [options]... uri [api verb [data]]\n", name);
-	fprintf(status ? stderr : stdout, "       %s -d [options]... uri [verb [data]]\n", name);
-	fprintf(status ? stderr : stdout, "\n"
+	prt("usage: %s [options]... uri [api verb [data]]\n", name);
+	prt("       %s -d [options]... uri [verb [data]]\n", name);
+	prt("\n"
 		"allowed options\n"
 		"  -b, --break         Break connection just after event/call has been emitted.\n"
 		"  -d, --direct        Direct api\n"
@@ -244,7 +261,7 @@ int main(int ac, char **av, char **env)
 	/* get the default event loop */
 	rc = sd_event_default(&loop);
 	if (rc < 0) {
-		fprintf(stderr, "connection to default event loop failed: %s\n", strerror(-rc));
+		error("connection to default event loop failed: %s\n", strerror(-rc));
 		return 1;
 	}
 
@@ -252,7 +269,7 @@ int main(int ac, char **av, char **env)
 	if (direct) {
 		pws = afb_ws_client_connect_api(loop, av[1], &pws_itf, NULL);
 		if (pws == NULL) {
-			fprintf(stderr, "connection to %s failed: %m\n", av[1]);
+			error("connection to %s failed: %m\n", av[1]);
 			return Exit_Cant_Connect;
 		}
 		afb_proto_ws_on_hangup(pws, on_pws_hangup);
@@ -276,7 +293,7 @@ int main(int ac, char **av, char **env)
 		);
 		wsj1 = afb_ws_client_connect_wsj1(loop, url, &wsj1_itf, NULL);
 		if (wsj1 == NULL) {
-			fprintf(stderr, "connection to %s failed: %m\n", av[1]);
+			error("connection to %s failed: %m\n", av[1]);
 			return Exit_Cant_Connect;
 		}
 	}
@@ -311,13 +328,109 @@ int main(int ac, char **av, char **env)
 	return exitcode;
 }
 
+/* exit when out of memory */
+static void leave(int code, const char *msg)
+{
+	if (msg)
+		write(2, msg, strlen(msg));
+	exit(code);
+}
+
+
+/* exit when out of memory */
+static void oom()
+{
+	leave(Exit_Out_Of_Memory, "\nout of memory - emergency exit\n");
+}
+
+static void fatal()
+{
+	leave(Exit_Fatal_Internal, "\ninternal fatal error - emergency exit\n");
+}
+
 /* ensure allocation pointer succes */
 static void ensure_allocation(void *p)
 {
-	if (!p) {
-		fprintf(stderr, "out of memory\n");
-		exit(Exit_Out_Of_Memory);
+	if (!p)
+		oom();
+}
+
+/* get a buffer line */
+static void flush_buffers()
+{
+	ssize_t rc;
+	struct buffer *buffer;
+	sd_event_source *src;
+
+	while((buffer = buffers_head)) {
+		rc = write(buffer->file, &buffer->value[buffer->offset], buffer->length - buffer->offset);
+		if (rc < 0) {
+			if (errno == EAGAIN || errno == EWOULDBLOCK) {
+				if (sd_event_add_io(loop, &src, buffer->file, EPOLLOUT, onout, NULL) < 0)
+					fatal();
+				break;
+			}
+			if (errno != EINTR) {
+				fatal();
+			}
+		}
+		else {
+			buffer->offset += (size_t)rc;
+			if (buffer->offset == buffer->length) {
+				buffers_head = buffer->next;
+				free(buffer->value);
+				free(buffer);
+			}
+		}
 	}
+}
+
+static int onout(sd_event_source *src, int fd, uint32_t revents, void *closure)
+{
+	sd_event_source_unref(src);
+	flush_buffers();
+	return 0;
+}
+
+static int out(int file, const char *fmt, va_list ap)
+{
+	int rc;
+	struct buffer *buffer = malloc(sizeof *buffer);
+	buffer->file = file;
+	rc = vasprintf(&buffer->value, fmt, ap);
+	if (rc < 0) { oom(); return rc; }
+	if (rc == 0) {
+		free(buffer);
+	}
+	else {
+		buffer->length = (unsigned)rc;
+		buffer->offset = 0;
+		buffer->next = 0;
+		*(!buffers_head ? &buffers_head : &buffers_tail->next) = buffer;
+		buffers_tail = buffer;
+	}
+	flush_buffers();
+	return 0;
+}
+
+static int print(const char *fmt, ...)
+{
+	int r;
+	va_list ap;
+	va_start(ap, fmt);
+	r = out(1, fmt, ap);
+	va_end(ap);
+	return r;
+}
+
+static int error(const char *fmt, ...)
+{
+	int r;
+	va_list ap;
+	va_start(ap, fmt);
+	r = out(2, fmt, ap);
+	va_end(ap);
+	return r;
 }
 
 /* add a pending line */
@@ -368,8 +481,7 @@ static void inc_callcount()
 /* called when wsj1 hangsup */
 static void on_wsj1_hangup(void *closure, struct afb_wsj1 *wsj1)
 {
-	printf("ON-HANGUP\n");
-	fflush(stdout);
+	print("ON-HANGUP\n");
 	exit(Exit_HangUp);
 }
 
@@ -378,27 +490,25 @@ static void on_wsj1_call(void *closure, const char *api, const char *verb, struc
 {
 	int rc;
 	if (raw)
-		printf("%s\n", afb_wsj1_msg_object_s(msg, 0));
+		print("%s\n", afb_wsj1_msg_object_s(msg, 0));
 	if (human)
-		printf("ON-CALL %s/%s:\n%s\n", api, verb,
+		print("ON-CALL %s/%s:\n%s\n", api, verb,
 				json_object_to_json_string_ext(afb_wsj1_msg_object_j(msg),
 							JSON_C_TO_STRING_PRETTY|JSON_C_TO_STRING_NOSLASHESCAPE));
-	fflush(stdout);
 	rc = afb_wsj1_reply_error_s(msg, "\"unimplemented\"", NULL);
 	if (rc < 0)
-		fprintf(stderr, "replying failed: %m\n");
+		error("replying failed: %m\n");
 }
 
 /* called when wsj1 receives an event */
 static void on_wsj1_event(void *closure, const char *event, struct afb_wsj1_msg *msg)
 {
 	if (raw)
-		printf("%s\n", afb_wsj1_msg_object_s(msg, 0));
+		print("%s\n", afb_wsj1_msg_object_s(msg, 0));
 	if (human)
-		printf("ON-EVENT %s:\n%s\n", event,
+		print("ON-EVENT %s:\n%s\n", event,
 				json_object_to_json_string_ext(afb_wsj1_msg_object_j(msg),
 							JSON_C_TO_STRING_PRETTY|JSON_C_TO_STRING_NOSLASHESCAPE));
-	fflush(stdout);
 }
 
 /* called when wsj1 receives a reply */
@@ -407,13 +517,12 @@ static void on_wsj1_reply(void *closure, struct afb_wsj1_msg *msg)
 	int iserror = !afb_wsj1_msg_is_reply_ok(msg);
 	exitcode = iserror ? Exit_Error : Exit_Success;
 	if (raw)
-		printf("%s\n", afb_wsj1_msg_object_s(msg, 0));
+		print("%s\n", afb_wsj1_msg_object_s(msg, 0));
 	if (human)
-		printf("ON-REPLY %s: %s\n%s\n", (char*)closure,
+		print("ON-REPLY %s: %s\n%s\n", (char*)closure,
 				iserror ? "ERROR" : "OK",
 				json_object_to_json_string_ext(afb_wsj1_msg_object_j(msg),
 							JSON_C_TO_STRING_PRETTY|JSON_C_TO_STRING_NOSLASHESCAPE));
-	fflush(stdout);
 	free(closure);
 	dec_callcount();
 }
@@ -430,13 +539,13 @@ static void wsj1_call(const char *api, const char *verb, const char *object)
 
 	/* echo the command if asked */
 	if (echo)
-		printf("SEND-CALL %s/%s %s\n", api, verb, object?:"null");
+		print("SEND-CALL %s/%s %s\n", api, verb, object?:"null");
 
 	/* send the request */
 	inc_callcount();
 	rc = afb_wsj1_call_s(wsj1, api, verb, object, on_wsj1_reply, key);
 	if (rc < 0) {
-		fprintf(stderr, "calling %s/%s(%s) failed: %m\n", api, verb, object);
+		error("calling %s/%s(%s) failed: %m\n", api, verb, object);
 		dec_callcount();
 	}
 }
@@ -448,11 +557,11 @@ static void wsj1_event(const char *event, const char *object)
 
 	/* echo the command if asked */
 	if (echo)
-		printf("SEND-EVENT: %s %s\n", event, object?:"null");
+		print("SEND-EVENT: %s %s\n", event, object?:"null");
 
 	rc = afb_wsj1_send_event_s(wsj1, event, object);
 	if (rc < 0)
-		fprintf(stderr, "sending !%s(%s) failed: %m\n", event, object);
+		error("sending !%s(%s) failed: %m\n", event, object);
 }
 
 /* emits either a call (when api!='!') or an event */
@@ -492,7 +601,7 @@ static void emit_line(char *line)
 	else if (f2[0])
 		wsj1_emit(f1, f2, rem);
 	else
-		fprintf(stderr, "verb missing, bad line: %s\n", line);
+		error("verb missing, bad line: %s\n", line);
 
 	if (breakcon)
 		exit(0);
@@ -542,7 +651,7 @@ static void process_stdin()
 	}
 	if (rc < 0) {
 		if (errno != EAGAIN) {
-			fprintf(stderr, "read error: %m\n");
+			error("read error: %m\n");
 			exit(Exit_Input_Fail);
 		}
 	}
@@ -553,7 +662,7 @@ static void process_stdin()
 		if (line[pos] != '\n') {
 			pos++;
 			if (pos >= sizeof line) {
-				fprintf(stderr, "line overflow\n");
+				error("line overflow\n");
 				exit(Exit_Line_Overflow);
 			}
 		}
@@ -607,56 +716,49 @@ static void on_pws_reply(void *closure, void *request, struct json_object *resul
 		if (result)
 			json_object_object_add(x, "response", json_object_get(result));
 
-		printf("%s\n", json_object_to_json_string_ext(x, JSON_C_TO_STRING_NOSLASHESCAPE));
+		print("%s\n", json_object_to_json_string_ext(x, JSON_C_TO_STRING_NOSLASHESCAPE));
 		json_object_put(x);
 	}
 	if (human)
-		printf("ON-REPLY %s: %s %s\n%s\n", (char*)request, error, info ?: "", json_object_to_json_string_ext(result, JSON_C_TO_STRING_PRETTY|JSON_C_TO_STRING_NOSLASHESCAPE));
-	fflush(stdout);
+		print("ON-REPLY %s: %s %s\n%s\n", (char*)request, error, info ?: "", json_object_to_json_string_ext(result, JSON_C_TO_STRING_PRETTY|JSON_C_TO_STRING_NOSLASHESCAPE));
 	free(request);
 	dec_callcount();
 }
 
 static void on_pws_event_create(void *closure, uint16_t event_id, const char *event_name)
 {
-	printf("ON-EVENT-CREATE: [%d:%s]\n", event_id, event_name);
-	fflush(stdout);
+	print("ON-EVENT-CREATE: [%d:%s]\n", event_id, event_name);
 }
 
 static void on_pws_event_remove(void *closure, uint16_t event_id)
 {
-	printf("ON-EVENT-REMOVE: [%d]\n", event_id);
-	fflush(stdout);
+	print("ON-EVENT-REMOVE: [%d]\n", event_id);
 }
 
 static void on_pws_event_subscribe(void *closure, void *request, uint16_t event_id)
 {
-	printf("ON-EVENT-SUBSCRIBE %s: [%d]\n", (char*)request, event_id);
-	fflush(stdout);
+	print("ON-EVENT-SUBSCRIBE %s: [%d]\n", (char*)request, event_id);
 }
 
 static void on_pws_event_unsubscribe(void *closure, void *request, uint16_t event_id)
 {
-	printf("ON-EVENT-UNSUBSCRIBE %s: [%d]\n", (char*)request, event_id);
-	fflush(stdout);
+	print("ON-EVENT-UNSUBSCRIBE %s: [%d]\n", (char*)request, event_id);
 }
 
 static void on_pws_event_push(void *closure, uint16_t event_id, struct json_object *data)
 {
 	if (raw)
-		printf("ON-EVENT-PUSH: [%d]\n%s\n", event_id, json_object_to_json_string_ext(data, JSON_C_TO_STRING_NOSLASHESCAPE));
+		print("ON-EVENT-PUSH: [%d]\n%s\n", event_id, json_object_to_json_string_ext(data, JSON_C_TO_STRING_NOSLASHESCAPE));
 	if (human)
-		printf("ON-EVENT-PUSH: [%d]\n%s\n", event_id, json_object_to_json_string_ext(data, JSON_C_TO_STRING_PRETTY|JSON_C_TO_STRING_NOSLASHESCAPE));
-	fflush(stdout);
+		print("ON-EVENT-PUSH: [%d]\n%s\n", event_id, json_object_to_json_string_ext(data, JSON_C_TO_STRING_PRETTY|JSON_C_TO_STRING_NOSLASHESCAPE));
 }
 
 static void on_pws_event_broadcast(void *closure, const char *event_name, struct json_object *data, const afb_proto_ws_uuid_t uuid, uint8_t hop)
 {
 	if (raw)
-		printf("ON-EVENT-BROADCAST: [%s]\n%s\n", event_name, json_object_to_json_string_ext(data, JSON_C_TO_STRING_NOSLASHESCAPE));
+		print("ON-EVENT-BROADCAST: [%s]\n%s\n", event_name, json_object_to_json_string_ext(data, JSON_C_TO_STRING_NOSLASHESCAPE));
 	if (human)
-		printf("ON-EVENT-BROADCAST: [%s]\n%s\n", event_name, json_object_to_json_string_ext(data, JSON_C_TO_STRING_PRETTY|JSON_C_TO_STRING_NOSLASHESCAPE));
-	fflush(stdout);
+		print("ON-EVENT-BROADCAST: [%s]\n%s\n", event_name, json_object_to_json_string_ext(data, JSON_C_TO_STRING_PRETTY|JSON_C_TO_STRING_NOSLASHESCAPE));
 }
 
 /* makes a call */
@@ -673,7 +775,7 @@ static void pws_call(const char *verb, const char *object)
 
 	/* echo the command if asked */
 	if (echo)
-		printf("SEND-CALL: %s %s\n", verb, object?:"null");
+		print("SEND-CALL: %s %s\n", verb, object?:"null");
 
 	/* send the request */
 	inc_callcount();
@@ -687,7 +789,7 @@ static void pws_call(const char *verb, const char *object)
 	rc = afb_proto_ws_client_call(pws, verb, o, numuuid, numtoken, key, NULL);
 	json_object_put(o);
 	if (rc < 0) {
-		fprintf(stderr, "calling %s(%s) failed: %m\n", verb, object?:"");
+		error("calling %s(%s) failed: %m\n", verb, object?:"");
 		dec_callcount();
 	}
 }
@@ -695,7 +797,6 @@ static void pws_call(const char *verb, const char *object)
 /* called when pws hangsup */
 static void on_pws_hangup(void *closure)
 {
-	printf("ON-HANGUP\n");
-	fflush(stdout);
+	print("ON-HANGUP\n");
 	exit(Exit_HangUp);
 }
