@@ -169,12 +169,22 @@ static void usage(int status, char *arg0)
 		"  -s, --sync          Synchronous: wait for answers (like -p 1)\n"
 		"  -t, --token TOKEN   The token to use\n"
 		"  -u, --uuid UUID     The identifier of session to use\n"
+		"  -v, --version       Print the version and exits\n"
 		"Example:\n"
 		" %s --human 'localhost:1234/api' hello ping\n"
 		"\n", name
 	);
 
 	exit(status);
+}
+
+static void version(char *arg0)
+{
+	char *name = strrchr(arg0, '/');
+	name = name ? name + 1 : arg0;
+
+	printf("\n%s %s\nCopyright (C) 2015-2021 IoT.bzh Company\n\n", name, VERSION);
+	exit(0);
 }
 
 /* entry function */
@@ -227,6 +237,9 @@ int main(int ac, char **av, char **env)
 				av++;
 				ac--;
 			}
+			else if (!strcmp(an, "--version") && av[2]) { /* print version */
+				version(a0);
+			}
 			/* emit usage and exit */
 			else
 				usage(strcmp(an, "--help") ? Exit_Bad_Arg : Exit_Success, a0);
@@ -244,6 +257,7 @@ int main(int ac, char **av, char **env)
 				case 't': if (!av[2]) usage(Exit_Bad_Arg, a0); token = av[2]; av++; ac--; break;
 				case 'u': if (!av[2]) usage(Exit_Bad_Arg, a0); uuid = av[2]; av++; ac--; break;
 				case 'p': if (av[2] && atoi(av[2]) > 0) { synchro = atoi(av[2]); av++; ac--; break; } /*@fallthrough@*/
+				case 'v': version(a0); break;
 				default:
 					usage(an[rc] != 'h' ? Exit_Bad_Arg : Exit_Success, a0);
 					break;
