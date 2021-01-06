@@ -28,6 +28,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
+#include <limits.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/stat.h>
@@ -38,6 +39,9 @@
 #if WITH_READLINE
 #include <readline/readline.h>
 #include <readline/history.h>
+#define HISTORY_FILE  ".config/afb-client.history"
+static void rlhexitcb();
+static char history_file_path[PATH_MAX];
 #endif
 
 #include <systemd/sd-event.h>
@@ -309,7 +313,11 @@ int main(int ac, char **av, char **env)
 #if WITH_READLINE
 		else if (ontty) {
 			rl_callback_handler_install(0, process_line);
-			atexit(rl_deprep_terminal);
+			snprintf(history_file_path, sizeof history_file_path, "%s/%s",
+							getenv("HOME")?:"", HISTORY_FILE);
+			read_history(history_file_path);
+			history_set_pos(history_length);
+			atexit(rlhexitcb);
 		}
 #endif
 	} else {
@@ -327,6 +335,14 @@ int main(int ac, char **av, char **env)
 	}
 	return exitcode;
 }
+
+#if WITH_READLINE
+static void rlhexitcb()
+{
+	rl_deprep_terminal();
+	write_history(history_file_path);
+}
+#endif
 
 /* exit when out of memory */
 static void leave(int code, const char *msg)
