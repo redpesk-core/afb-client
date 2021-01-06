@@ -581,13 +581,21 @@ static char sep[] = " \t";
 /* emit call for the line */
 static void emit_line(char *line)
 {
+	size_t x;
 	char *f1, *f2, *rem;
 
 	/* normalise the buffer content */
 	/* TODO: handle backspace \x7f ? */
 	/* process the lines */
 	f1 = &line[strspn(line, sep)];
-	f2 = &f1[strcspn(f1, sep)];
+	x = strcspn(f1, sep);
+
+	/* check if system exec requested */
+	if (f1[0] == '!' && x > 1) {
+		system(&f1[1]);
+		return;
+	}
+	f2 = &f1[x];
 	if (*f2)
 		*f2++ = 0;
 	f2 = &f2[strspn(f2, sep)];
