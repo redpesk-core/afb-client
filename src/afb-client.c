@@ -237,7 +237,7 @@ int main(int ac, char **av, char **env)
 				av++;
 				ac--;
 			}
-			else if (!strcmp(an, "--version") && av[2]) { /* print version */
+			else if (!strcmp(an, "--version")) { /* print version */
 				version(a0);
 			}
 			/* emit usage and exit */
