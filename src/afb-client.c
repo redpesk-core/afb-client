@@ -267,9 +267,21 @@ int main(int ac, char **av, char **env)
 		ac--;
 	}
 
-	/* check the argument count */
-	if (ac != 2 && ac != 4 && ac != 5)
-		usage(1, a0);
+	/* check the argument count here ac is 2 + count */
+	if (ac == 1) {
+		error("missing uri\n");
+		return 1;
+	}
+	else if (ac == 2)
+		;/* do nothing, it is okay */
+	else if (direct && (ac != 3 && ac != 4)) {
+		error("extra arguments\n");
+		return 1;
+	}
+	else if (!direct && (ac != 4 && ac != 5)) {
+		error("%s\n", ac < 4 ? "missing api" : "extra arguments");
+		return 1;
+	}
 
 	/* set raw by default */
 	setvbuf(stdout, NULL, _IOLBF, 0);
