@@ -279,7 +279,7 @@ int main(int ac, char **av, char **env)
 		return 1;
 	}
 	else if (!direct && (ac != 4 && ac != 5)) {
-		error("%s\n", ac < 4 ? "missing api" : "extra arguments");
+		error("%s\n", ac < 4 ? "missing verb" : "extra arguments");
 		return 1;
 	}
 
