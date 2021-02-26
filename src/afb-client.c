@@ -641,15 +641,16 @@ static void emit_line(char *line)
 	if (*f2)
 		*f2++ = 0;
 	f2 = &f2[strspn(f2, sep)];
-	rem = &f2[strcspn(f2, sep)];
-	if (*rem)
-		*rem++ = 0;
-	rem = &rem[strspn(rem, sep)];
 
 	if (direct)
-		pws_call(f1, rem);
-	else if (f2[0])
+		pws_call(f1, f2);
+	else if (f2[0]) {
+		rem = &f2[strcspn(f2, sep)];
+		if (*rem)
+			*rem++ = 0;
+		rem = &rem[strspn(rem, sep)];
 		wsj1_emit(f1, f2, rem);
+	}
 	else
 		error("verb missing, bad line: %s\n", line);
 
