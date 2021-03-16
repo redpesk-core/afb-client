@@ -22,8 +22,8 @@
 # $RP_END_LICENSE$
 ###########################################################################
 
+add_compile_options(-DVERSION="${PROJECT_VERSION}")
 add_executable(afb-client afb-client.c)
-add_compile_definitions(VERSION="${PROJECT_VERSION}")
 include_directories(${modules_INCLUDE_DIRS} ${readline_INCLUDE_DIRS})
 
 target_link_libraries(afb-client ${modules_LDFLAGS} ${readline_LDFLAGS})

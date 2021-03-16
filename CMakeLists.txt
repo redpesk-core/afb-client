@@ -22,7 +22,7 @@
 # $RP_END_LICENSE$
 ###########################################################################
 
-CMAKE_MINIMUM_REQUIRED(VERSION 3.0)
+CMAKE_MINIMUM_REQUIRED(VERSION 3.10)
 
 project(afb-client C)
 
