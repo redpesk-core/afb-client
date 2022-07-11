@@ -170,10 +170,15 @@ static void usage(int status, char *arg0)
 		"  -t, --token TOKEN   The token to use\n"
 		"  -u, --uuid UUID     The identifier of session to use\n"
 		"  -v, --version       Print the version and exits\n"
+		"\n"
+		"When data is not given, it is implicitely null.\n"
+		"when data is given, it must be the last argument (use quoting on need).\n"
+		"\n"
 		"Example:\n"
-		" %s --human 'localhost:1234/api' hello ping\n"
-		"\n", name
 	);
+	prt(	" %s -H localhost:1234/api hello ping '{\"key1\":[1,2,3,true],\"key2\":\"item\"}'\n", name);
+	prt(	" %s -H localhost:1234/api hello ping null\n", name);
+	prt("\n");
 
 	exit(status);
 }
@@ -275,11 +280,14 @@ int main(int ac, char **av, char **env)
 	else if (ac == 2)
 		;/* do nothing, it is okay */
 	else if (direct && (ac != 3 && ac != 4)) {
-		error("extra arguments\n");
+		error("extra arguments (clue: check quoting of last argument)\n");
 		return 1;
 	}
 	else if (!direct && (ac != 4 && ac != 5)) {
-		error("%s\n", ac < 4 ? "missing verb" : "extra arguments");
+		if (ac < 4)
+			error("missing verb\n");
+		else
+			error("extra arguments (clue: check quoting of last argument)\n");
 		return 1;
 	}
 
