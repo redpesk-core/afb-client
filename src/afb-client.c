@@ -173,11 +173,13 @@ static void usage(int status, char *arg0)
 		"\n"
 		"When data is not given, it is implicitely null.\n"
 		"when data is given, it must be the last argument (use quoting on need).\n"
+		"When data is - (a single dash), data is read from stdin\n"
 		"\n"
 		"Example:\n"
 	);
 	prt(	" %s -H localhost:1234/api hello ping '{\"key1\":[1,2,3,true],\"key2\":\"item\"}'\n", name);
 	prt(	" %s -H localhost:1234/api hello ping null\n", name);
+	prt(	" echo '[1,false,\"item\",null]' | %s -H localhost:1234/api hello ping -\n", name);
 	prt("\n");
 
 	exit(status);
@@ -190,6 +192,48 @@ static void version(char *arg0)
 
 	printf("\n%s %s\nCopyright (C) 2015-2022 IoT.bzh Company\n\n", name, VERSION);
 	exit(0);
+}
+
+static char *readfile(FILE *file)
+{
+	char buffer[4096];
+	size_t szr, size = 0;
+	char *nres, *result = NULL;
+
+	for(;;) {
+		clearerr(file);
+		szr = fread(buffer, 1, sizeof buffer, file);
+		if (ferror(file)) {
+			error("error while reading file\n");
+			exit(1);
+		}
+		if (szr > 0) {
+			nres = realloc(result, size + szr + 1);
+			if (nres == NULL) {
+				error("out of memory\n");
+				exit(1);
+			}
+			result = nres;
+			memcpy(&result[size], buffer, szr);
+			size += szr;
+			result[size] = 0;
+		}
+		if (feof(file))
+			return result == NULL ? "null" : result;
+	}
+}
+
+static const char *cmdarg(char *cmd)
+{
+	if (cmd == NULL)
+		return "null";
+
+	/* check if 'cmd' equals "-" */
+	if (cmd[0] != '-' || cmd[1] != 0)
+		return cmd; /* no, then returns it */
+
+	/* read from stdin */
+	return readfile(stdin);
 }
 
 /* entry function */
@@ -358,9 +402,9 @@ int main(int ac, char **av, char **env)
 		/* the request is defined by the arguments */
 		usein = 0;
 		if (direct)
-			pws_call(av[2], av[3]);
+			pws_call(av[2], cmdarg(av[3]));
 		else
-			wsj1_emit(av[2], av[3], av[4]);
+			wsj1_emit(av[2], av[3], cmdarg(av[4]));
 	}
 
 	/* loop until end */
