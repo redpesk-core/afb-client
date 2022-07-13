@@ -154,8 +154,8 @@ static void usage(int status, char *arg0)
 	int (*prt)(const char *fmt, ...) = status ? error : print;
 	char *name = strrchr(arg0, '/');
 	name = name ? name + 1 : arg0;
-	prt("usage: %s [options]... uri [api verb [data]]\n", name);
-	prt("       %s -d [options]... uri [verb [data]]\n", name);
+	prt("usage: %s [options]... uri [api verb data]\n", name);
+	prt("       %s -d [options]... uri [verb data]\n", name);
 	prt("\n"
 		"allowed options\n"
 		"  -b, --break         Break connection just after event/call has been emitted.\n"
@@ -171,9 +171,8 @@ static void usage(int status, char *arg0)
 		"  -u, --uuid UUID     The identifier of session to use\n"
 		"  -v, --version       Print the version and exits\n"
 		"\n"
-		"When data is not given, it is implicitely null.\n"
-		"when data is given, it must be the last argument (use quoting on need).\n"
-		"When data is - (a single dash), data is read from stdin\n"
+		"Data must be the last argument (use quoting on need).\n"
+		"Data can be - (a single dash), in that case data is read from stdin.\n"
 		"\n"
 		"Example:\n"
 	);
@@ -225,8 +224,10 @@ static char *readfile(FILE *file)
 
 static const char *cmdarg(char *cmd)
 {
-	if (cmd == NULL)
+	if (cmd == NULL) {
+		error("implicit null in arguments is deprecated and will be removed soon.");
 		return "null";
+	}
 
 	/* check if 'cmd' equals "-" */
 	if (cmd[0] != '-' || cmd[1] != 0)
