@@ -225,7 +225,7 @@ static char *readfile(FILE *file)
 static const char *cmdarg(char *cmd)
 {
 	if (cmd == NULL) {
-		error("implicit null in arguments is deprecated and will be removed soon.");
+		error("implicit null in arguments is deprecated and will be removed soon.\n");
 		return "null";
 	}
 
