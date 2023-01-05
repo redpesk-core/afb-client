@@ -1,0 +1,2 @@
+req	pkg	json-c libsystemd>=222 libafbcli>=4.0
+opt	pkg	readline
