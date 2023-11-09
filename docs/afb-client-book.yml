@@ -1,0 +1,13 @@
+type: books
+books:
+-
+    id: afb_client
+    title: Binder's client
+    description: Command line Client for Application Framework Binder
+    keywords:
+    author: "IotBzh"
+    version: master
+    chapters:
+    - url: afb-client.1.scd
+      name: Man page of afb-client
+

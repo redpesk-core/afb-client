@@ -63,3 +63,5 @@ if(readline_FOUND)
 endif(readline_FOUND)
 
 add_subdirectory(src)
+add_subdirectory(docs)
+
