@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015-2023 IoT.bzh Company
+ * Copyright (C) 2015-2024 IoT.bzh Company
  * Author "Fulup Ar Foll"
  * Author: José Bollo <jose.bollo@iot.bzh>
  *
@@ -189,7 +189,7 @@ static void version(char *arg0)
 	char *name = strrchr(arg0, '/');
 	name = name ? name + 1 : arg0;
 
-	printf("\n%s %s\nCopyright (C) 2015-2023 IoT.bzh Company\n\n", name, VERSION);
+	printf("\n%s %s\nCopyright (C) 2015-2024 IoT.bzh Company\n\n", name, VERSION);
 	exit(0);
 }
 
