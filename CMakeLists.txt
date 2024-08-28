@@ -24,37 +24,14 @@
 
 CMAKE_MINIMUM_REQUIRED(VERSION 3.10)
 
-project(afb-client C)
-
-SET(PROJECT_DESCRIPTION "Basic Client of Application Framework Binder")
-set(PROJECT_VERSION 4.0.2)
-set(PROJECT_URL "https://github.com/redpesk-core/afb-client")
+project(afb-client
+        VERSION 4.1.0
+        DESCRIPTION "Basic Client of Application Framework Binder"
+        HOMEPAGE_URL "https://github.com/redpesk-core/afb-client"
+        LANGUAGES C)
 
 INCLUDE(FindPkgConfig)
 INCLUDE(GNUInstallDirs)
-
-###########################################################################
-
-link_libraries(-Wl,--as-needed -Wl,--gc-sections -Wl,--no-undefined)
-
-add_compile_options(-Wall -Wextra -Wconversion)
-add_compile_options(-Wno-unused-parameter) # frankly not using a parameter does it care?
-add_compile_options(
-	$<$<C_COMPILER_ID:GNU>:-Werror=maybe-uninitialized>
-	$<$<CXX_COMPILER_ID:GNU>:-Werror=maybe-uninitialized>
-	$<$<C_COMPILER_ID:Clang>:-Werror=sometimes-uninitialized>
-	$<$<CXX_COMPILER_ID:Clang>:-Werror=sometimes-uninitialized>
-	$<$<COMPILE_LANGUAGE:C>:-Werror=implicit-function-declaration>
-)
-add_compile_options(-ffunction-sections -fdata-sections)
-add_compile_options(-fPIC)
-
-set(CMAKE_C_FLAGS_PROFILING    "-g -O2 -pg -U_FORTIFY_SOURCE")
-set(CMAKE_C_FLAGS_DEBUG        "-g -O2 -ggdb -U_FORTIFY_SOURCE")
-set(CMAKE_C_FLAGS_RELEASE      "-g -O3")
-set(CMAKE_C_FLAGS_COVERAGE     "-g -O2 --coverage")
-
-###########################################################################
 
 pkg_check_modules(modules REQUIRED json-c libsystemd>=222 libafbcli>=4.0)
 pkg_check_modules(readline readline)
