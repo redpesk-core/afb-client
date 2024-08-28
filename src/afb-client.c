@@ -127,8 +127,8 @@ static struct afb_wsj1 *wsj1;
 static struct afb_proto_ws *pws;
 static int breakcon;
 static int callcount;
-static int human;
-static int raw;
+static int raw = 1;
+static int quiet;
 static int keeprun;
 static int direct;
 static int echo;
@@ -165,6 +165,7 @@ static void usage(int status, char *arg0)
 		"  -H, --human         Display human readable JSON\n"
 		"  -k, --keep-running  Keep running until disconnect, even if input closed\n"
 		"  -p, --pipe COUNT    Allow to pipe COUNT requests\n"
+		"  -q, --quiet         Less output\n"
 		"  -r, --raw           Raw output (default)\n"
 		"  -s, --sync          Synchronous: wait for answers (like -p 1)\n"
 		"  -t, --token TOKEN   The token to use\n"
@@ -252,7 +253,7 @@ int main(int ac, char **av, char **env)
 			/* long option */
 
 			if (!strcmp(an, "--human")) /* request for human output */
-				human = 1;
+				raw = 0;
 
 			else if (!strcmp(an, "--raw")) /* request for raw output */
 				raw = 1;
@@ -277,6 +278,9 @@ int main(int ac, char **av, char **env)
 				av++;
 				ac--;
 			}
+			else if (!strcmp(an, "--quiet")) /* request less output */
+				quiet = 1;
+
 			else if (!strcmp(an, "--token") && av[2]) { /* token to use */
 				token = av[2];
 				av++;
@@ -297,7 +301,7 @@ int main(int ac, char **av, char **env)
 			/* short option(s) */
 			for (rc = 1 ; an[rc] ; rc++)
 				switch (an[rc]) {
-				case 'H': human = 1; break;
+				case 'H': raw = 0; break;
 				case 'r': raw = 1; break;
 				case 'd': direct = 1; break;
 				case 'b': breakcon = 1; break;
@@ -307,6 +311,7 @@ int main(int ac, char **av, char **env)
 				case 't': if (!av[2]) usage(Exit_Bad_Arg, a0); token = av[2]; av++; ac--; break;
 				case 'u': if (!av[2]) usage(Exit_Bad_Arg, a0); uuid = av[2]; av++; ac--; break;
 				case 'p': if (av[2] && atoi(av[2]) > 0) { synchro = atoi(av[2]); av++; ac--; break; } /*@fallthrough@*/
+				case 'q': quiet = 1; break;
 				case 'v': version(a0); break;
 				default:
 					usage(an[rc] != 'h' ? Exit_Bad_Arg : Exit_Success, a0);
@@ -338,8 +343,6 @@ int main(int ac, char **av, char **env)
 
 	/* set raw by default */
 	setvbuf(stdout, NULL, _IOLBF, 0);
-	if (!human)
-		raw = 1;
 
 	/* get the default event loop */
 	rc = sd_event_default(&loop);
@@ -576,7 +579,8 @@ static void inc_callcount()
 /* called when wsj1 hangsup */
 static void on_wsj1_hangup(void *closure, struct afb_wsj1 *wsj1)
 {
-	print("ON-HANGUP\n");
+	if (!quiet)
+		print("ON-HANGUP\n");
 	exit(Exit_HangUp);
 }
 
@@ -584,11 +588,12 @@ static void on_wsj1_hangup(void *closure, struct afb_wsj1 *wsj1)
 static void on_wsj1_call(void *closure, const char *api, const char *verb, struct afb_wsj1_msg *msg)
 {
 	int rc;
+	if (!quiet)
+		print("ON-CALL %s/%s:\n", api, verb);
 	if (raw)
 		print("%s\n", afb_wsj1_msg_object_s(msg, 0));
-	if (human)
-		print("ON-CALL %s/%s:\n%s\n", api, verb,
-				json_object_to_json_string_ext(afb_wsj1_msg_object_j(msg),
+	else
+		print("%s\n", json_object_to_json_string_ext(afb_wsj1_msg_object_j(msg),
 							JSON_C_TO_STRING_PRETTY|JSON_C_TO_STRING_NOSLASHESCAPE));
 	rc = afb_wsj1_reply_error_s(msg, "\"unimplemented\"", NULL);
 	if (rc < 0)
@@ -598,11 +603,12 @@ static void on_wsj1_call(void *closure, const char *api, const char *verb, struc
 /* called when wsj1 receives an event */
 static void on_wsj1_event(void *closure, const char *event, struct afb_wsj1_msg *msg)
 {
+	if (!quiet)
+		print("ON-EVENT %s:\n", event);
 	if (raw)
 		print("%s\n", afb_wsj1_msg_object_s(msg, 0));
-	if (human)
-		print("ON-EVENT %s:\n%s\n", event,
-				json_object_to_json_string_ext(afb_wsj1_msg_object_j(msg),
+	else
+		print("%s\n", json_object_to_json_string_ext(afb_wsj1_msg_object_j(msg),
 							JSON_C_TO_STRING_PRETTY|JSON_C_TO_STRING_NOSLASHESCAPE));
 }
 
@@ -611,12 +617,12 @@ static void on_wsj1_reply(void *closure, struct afb_wsj1_msg *msg)
 {
 	int iserror = !afb_wsj1_msg_is_reply_ok(msg);
 	exitcode = iserror ? Exit_Error : Exit_Success;
+	if (!quiet)
+		print("ON-REPLY %s: %s\n", (char*)closure, iserror ? "ERROR" : "OK");
 	if (raw)
 		print("%s\n", afb_wsj1_msg_object_s(msg, 0));
-	if (human)
-		print("ON-REPLY %s: %s\n%s\n", (char*)closure,
-				iserror ? "ERROR" : "OK",
-				json_object_to_json_string_ext(afb_wsj1_msg_object_j(msg),
+	else
+		print("%s\n", json_object_to_json_string_ext(afb_wsj1_msg_object_j(msg),
 							JSON_C_TO_STRING_PRETTY|JSON_C_TO_STRING_NOSLASHESCAPE));
 	free(closure);
 	dec_callcount();
@@ -809,60 +815,58 @@ static void on_pws_reply(void *closure, void *request, struct json_object *resul
 	int iserror = !!error;
 	exitcode = iserror ? Exit_Error : Exit_Success;
 	error = error ?: "success";
-	if (raw) {
-		/* TODO: transitionnal: fake the structured response */
-		struct json_object *x = json_object_new_object(), *y = json_object_new_object();
-		json_object_object_add(x, "jtype", json_object_new_string("afb-reply"));
-		json_object_object_add(x, "request", y);
-		json_object_object_add(y, "status", json_object_new_string(error));
-		if (info)
-			json_object_object_add(y, "info", json_object_new_string(info));
-		if (result)
-			json_object_object_add(x, "response", json_object_get(result));
-
-		print("%s\n", json_object_to_json_string_ext(x, JSON_C_TO_STRING_NOSLASHESCAPE));
-		json_object_put(x);
-	}
-	if (human)
-		print("ON-REPLY %s: %s %s\n%s\n", (char*)request, error, info ?: "", json_object_to_json_string_ext(result, JSON_C_TO_STRING_PRETTY|JSON_C_TO_STRING_NOSLASHESCAPE));
+	if (!quiet)
+		print("ON-REPLY %s: %s %s\n", (char*)request, error, info ?: "");
+	if (raw)
+		print("%s\n", json_object_to_json_string_ext(result, JSON_C_TO_STRING_NOSLASHESCAPE));
+	else
+		print("%s\n", json_object_to_json_string_ext(result, JSON_C_TO_STRING_PRETTY|JSON_C_TO_STRING_NOSLASHESCAPE));
 	free(request);
 	dec_callcount();
 }
 
 static void on_pws_event_create(void *closure, uint16_t event_id, const char *event_name)
 {
-	print("ON-EVENT-CREATE: [%d:%s]\n", event_id, event_name);
+	if (!quiet)
+		print("ON-EVENT-CREATE: [%d:%s]\n", event_id, event_name);
 }
 
 static void on_pws_event_remove(void *closure, uint16_t event_id)
 {
-	print("ON-EVENT-REMOVE: [%d]\n", event_id);
+	if (!quiet)
+		print("ON-EVENT-REMOVE: [%d]\n", event_id);
 }
 
 static void on_pws_event_subscribe(void *closure, void *request, uint16_t event_id)
 {
-	print("ON-EVENT-SUBSCRIBE %s: [%d]\n", (char*)request, event_id);
+	if (!quiet)
+		print("ON-EVENT-SUBSCRIBE %s: [%d]\n", (char*)request, event_id);
 }
 
 static void on_pws_event_unsubscribe(void *closure, void *request, uint16_t event_id)
 {
-	print("ON-EVENT-UNSUBSCRIBE %s: [%d]\n", (char*)request, event_id);
+	if (!quiet)
+		print("ON-EVENT-UNSUBSCRIBE %s: [%d]\n", (char*)request, event_id);
 }
 
 static void on_pws_event_push(void *closure, uint16_t event_id, struct json_object *data)
 {
+	if (!quiet)
+		print("ON-EVENT-PUSH: [%d]\n", event_id);
 	if (raw)
-		print("ON-EVENT-PUSH: [%d]\n%s\n", event_id, json_object_to_json_string_ext(data, JSON_C_TO_STRING_NOSLASHESCAPE));
-	if (human)
-		print("ON-EVENT-PUSH: [%d]\n%s\n", event_id, json_object_to_json_string_ext(data, JSON_C_TO_STRING_PRETTY|JSON_C_TO_STRING_NOSLASHESCAPE));
+		print("%s\n", json_object_to_json_string_ext(data, JSON_C_TO_STRING_NOSLASHESCAPE));
+	else
+		print("%s\n", json_object_to_json_string_ext(data, JSON_C_TO_STRING_PRETTY|JSON_C_TO_STRING_NOSLASHESCAPE));
 }
 
 static void on_pws_event_broadcast(void *closure, const char *event_name, struct json_object *data, const afb_proto_ws_uuid_t uuid, uint8_t hop)
 {
+	if (!quiet)
+		print("ON-EVENT-BROADCAST: [%s]\n", event_name);
 	if (raw)
-		print("ON-EVENT-BROADCAST: [%s]\n%s\n", event_name, json_object_to_json_string_ext(data, JSON_C_TO_STRING_NOSLASHESCAPE));
-	if (human)
-		print("ON-EVENT-BROADCAST: [%s]\n%s\n", event_name, json_object_to_json_string_ext(data, JSON_C_TO_STRING_PRETTY|JSON_C_TO_STRING_NOSLASHESCAPE));
+		print("%s\n", json_object_to_json_string_ext(data, JSON_C_TO_STRING_NOSLASHESCAPE));
+	else
+		print("%s\n", json_object_to_json_string_ext(data, JSON_C_TO_STRING_PRETTY|JSON_C_TO_STRING_NOSLASHESCAPE));
 }
 
 /* makes a call */
@@ -901,6 +905,7 @@ static void pws_call(const char *verb, const char *object)
 /* called when pws hangsup */
 static void on_pws_hangup(void *closure)
 {
-	print("ON-HANGUP\n");
+	if (!quiet)
+		print("ON-HANGUP\n");
 	exit(Exit_HangUp);
 }
