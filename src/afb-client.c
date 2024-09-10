@@ -50,6 +50,11 @@ static char history_file_path[PATH_MAX];
 #define JSON_C_TO_STRING_NOSLASHESCAPE 0
 #endif
 
+/*!!! HACK SINCE libafb 5.2.1 the 2 below declarations must be set !!!*/
+/*!!! HACK this is a temporary fix                                 !!!*/
+#define WITH_WSAPI 1
+#define WITH_WSJ1  1
+
 #include <libafbcli/afb-wsj1.h>
 #include <libafbcli/afb-ws-client.h>
 #include <libafbcli/afb-proto-ws.h>
