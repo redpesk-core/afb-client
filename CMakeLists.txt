@@ -25,7 +25,7 @@
 CMAKE_MINIMUM_REQUIRED(VERSION 3.10)
 
 project(afb-client
-        VERSION 4.1.0
+        VERSION 4.2.0
         DESCRIPTION "Basic Client of Application Framework Binder"
         HOMEPAGE_URL "https://github.com/redpesk-core/afb-client"
         LANGUAGES C)
@@ -33,7 +33,7 @@ project(afb-client
 INCLUDE(FindPkgConfig)
 INCLUDE(GNUInstallDirs)
 
-pkg_check_modules(modules REQUIRED json-c libsystemd>=222 libafbcli>=4.0)
+pkg_check_modules(modules REQUIRED json-c libsystemd>=222 libafbcli>=5.3.3)
 pkg_check_modules(readline readline)
 if(readline_FOUND)
 	add_compile_options(-DWITH_READLINE=1)
