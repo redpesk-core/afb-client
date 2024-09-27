@@ -143,6 +143,8 @@ static int usein;
 static sd_event *loop;
 static sd_event_source *evsrc;
 static char *uuid;
+static char *wsmaxlen;
+static size_t ws_max_length = 1000000;
 static char *token;
 static uint16_t numuuid;
 static uint16_t numtoken;
@@ -176,6 +178,7 @@ static void usage(int status, char *arg0)
 		"  -t, --token TOKEN   The token to use\n"
 		"  -u, --uuid UUID     The identifier of session to use\n"
 		"  -v, --version       Print the version and exits\n"
+		"  -w, --ws-maxlen VAL Set maximum length of websocket messages\n"
 		"\n"
 		"Data must be the last argument (use quoting on need).\n"
 		"Data can be - (a single dash), in that case data is read from stdin.\n"
@@ -299,6 +302,11 @@ int main(int ac, char **av, char **env)
 			else if (!strcmp(an, "--version")) { /* print version */
 				version(a0);
 			}
+			else if (!strcmp(an, "--ws-maxlen") && av[2]) { /* maximum websocket length */
+				wsmaxlen = av[2];
+				av++;
+				ac--;
+			}
 			/* emit usage and exit */
 			else
 				usage(strcmp(an, "--help") ? Exit_Bad_Arg : Exit_Success, a0);
@@ -318,6 +326,7 @@ int main(int ac, char **av, char **env)
 				case 'p': if (av[2] && atoi(av[2]) > 0) { synchro = atoi(av[2]); av++; ac--; break; } /*@fallthrough@*/
 				case 'q': quiet = 1; break;
 				case 'v': version(a0); break;
+				case 'w': if (!av[2]) usage(Exit_Bad_Arg, a0); wsmaxlen = av[2]; av++; ac--; break;
 				default:
 					usage(an[rc] != 'h' ? Exit_Bad_Arg : Exit_Success, a0);
 					break;
@@ -325,6 +334,17 @@ int main(int ac, char **av, char **env)
 		}
 		av++;
 		ac--;
+	}
+
+	/* get maxlen */
+	if (wsmaxlen) {
+		long wml = strtol(wsmaxlen, &wsmaxlen, 10);
+		if (wsmaxlen[0] != 0 || wml < 0) {
+			error("bad value for option --ws-maxlen\n");
+			return 1;
+		}
+		if (wml < ws_max_length)
+			wsmaxlen = NULL; /* ignore values lesser than min */
 	}
 
 	/* check the argument count here ac is 2 + count */
@@ -363,6 +383,8 @@ int main(int ac, char **av, char **env)
 			error("connection to %s failed: %m\n", av[1]);
 			return Exit_Cant_Connect;
 		}
+		if (wsmaxlen)
+			afb_proto_ws_set_max_length(pws, ws_max_length);
 		afb_proto_ws_on_hangup(pws, on_pws_hangup);
 		if (uuid) {
 			numuuid = 1;
@@ -387,6 +409,8 @@ int main(int ac, char **av, char **env)
 			error("connection to %s failed: %m\n", av[1]);
 			return Exit_Cant_Connect;
 		}
+		if (wsmaxlen)
+			afb_wsj1_set_max_length(wsj1, ws_max_length);
 	}
 
 	/* test the behaviour */
