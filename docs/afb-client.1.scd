@@ -69,6 +69,10 @@ then the API name must not be set but is implicit.
 	That means that a maximum of COUNT requests are pending
 	without reply.
 
+*-q, --quiet*
+	Dont show informative lines beginning with *ON-*.
+	Usefule for piping output to programs.
+
 *-r, --raw*
 	Raw output (default). This prints one line per reply or event
 	without making JSON readable.
@@ -86,6 +90,11 @@ then the API name must not be set but is implicit.
 
 *-v, --version*
 	Print the version and exits.
+
+*-w, --ws-maxlen VALUE*
+	Set the maximum length of websocket payloads to the given value.
+	By default, the maximum length is 1000000 (one million) bytes.
+	This option can be used either to increase or decrese that limit.
 
 
 # Connection to the binder and SOCKSPEC
