@@ -11,7 +11,7 @@
  *  a written agreement between you and The IoT.bzh Company. For licensing terms
  *  and conditions see https://www.iot.bzh/terms-conditions. For further
  *  information use the contact form at https://www.iot.bzh/contact.
- * 
+ *
  * GNU General Public License Usage
  *  Alternatively, this file may be used under the terms of the GNU General
  *  Public license version 3. This license is as published by the Free Software
@@ -48,6 +48,10 @@ static char history_file_path[PATH_MAX];
 #include <json-c/json.h>
 #if !defined(JSON_C_TO_STRING_NOSLASHESCAPE)
 #define JSON_C_TO_STRING_NOSLASHESCAPE 0
+#endif
+
+#ifndef WS_MAXLEN_MIN
+# define WS_MAXLEN_MIN 16384
 #endif
 
 /*!!! HACK SINCE libafb 5.2.1 the 2 below declarations must be set !!!*/
@@ -144,7 +148,7 @@ static sd_event *loop;
 static sd_event_source *evsrc;
 static char *uuid;
 static char *wsmaxlen;
-static size_t ws_max_length = 1000000;
+static size_t ws_max_length;
 static char *token;
 static uint16_t numuuid;
 static uint16_t numtoken;
@@ -343,8 +347,11 @@ int main(int ac, char **av, char **env)
 			error("bad value for option --ws-maxlen\n");
 			return 1;
 		}
-		if (wml < ws_max_length)
-			wsmaxlen = NULL; /* ignore values lesser than min */
+		if (wml < WS_MAXLEN_MIN) {
+			error("value of --ws-maxlen is too small (mini is %d)\n", WS_MAXLEN_MIN);
+			return 1;
+		}
+		ws_max_length = (size_t)wml;
 	}
 
 	/* check the argument count here ac is 2 + count */
