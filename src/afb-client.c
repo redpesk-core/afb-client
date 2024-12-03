@@ -784,7 +784,9 @@ static void process_stdin()
 {
 	static size_t pos = 0;
 	static size_t count = 0;
-	static char line[16384];
+	static char   line[16384];
+	static char  *prvline = NULL;
+	static size_t prvsize = 0;
 
 	ssize_t rc = 0;
 	char *l;
@@ -808,17 +810,26 @@ static void process_stdin()
 		if (line[pos] != '\n') {
 			pos++;
 			if (pos >= sizeof line) {
-				error("line overflow\n");
-				exit(Exit_Line_Overflow);
+				l = realloc(prvline, prvsize + pos);
+				ensure_allocation(l);
+				memcpy(&l[prvsize], line, pos);
+				prvsize += pos;
+				prvline = l;
+				count -= pos;
+				pos = 0;
 			}
 		}
-		else {
-			l = strndup(line, pos);
+		else if (pos > 0) {
+			l = realloc(prvline, prvsize + pos + 1);
 			ensure_allocation(l);
+			memcpy(&l[prvsize], line, pos);
+			l[prvsize + pos] = 0;
 			if (++pos < count)
 				memmove(line, line + pos, count - pos);
 			count -= pos;
 			pos = 0;
+			prvsize = 0;
+			prvline = NULL;
 			process_line(l);
 		}
 	}
